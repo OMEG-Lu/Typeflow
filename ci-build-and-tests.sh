@@ -1,9 +1,13 @@
-rm Podfile.lock
+#!/bin/bash
+
+set -euo pipefail
+
+rm -f Podfile.lock
 rm -rf Pods
 pod install
 
 echo "===================tests===================="
-sh unit-tests.sh
+bash unit-tests.sh
 
 echo "=================build App=================="
-sh build.sh
+bash build.sh

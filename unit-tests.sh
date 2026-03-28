@@ -1,3 +1,10 @@
-xcodebuild clean -workspace hallelujah.xcworkspace/ -scheme Tests
+#!/bin/bash
 
-xcodebuild test CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO -workspace hallelujah.xcworkspace/ -scheme Tests
+set -euo pipefail
+
+xcodebuild test \
+  CODE_SIGN_IDENTITY="" \
+  CODE_SIGNING_REQUIRED=NO \
+  -workspace hallelujah.xcworkspace/ \
+  -scheme Tests \
+  -destination "platform=macOS"
