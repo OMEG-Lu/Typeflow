@@ -69,6 +69,13 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
         }
 
         if (_defaultEnglishMode) {
+            // If user types a digit/symbol in English mode, cancel any pending predictions
+            if (event.characters.length > 0) {
+                unichar ch = [event.characters characterAtIndex:0];
+                if (![[NSCharacterSet letterCharacterSet] characterIsMember:ch]) {
+                    [[NextWordPredictor shared] cancelPendingPrediction];
+                }
+            }
             break;
         }
 
@@ -545,8 +552,10 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 
     [self reset];
 
-    // Trigger next-word prediction after commit
-    [self triggerNextWordPrediction];
+    // Only trigger prediction if committed text contains letters (not pure digits/symbols)
+    if ([self _containsLetter:text]) {
+        [self triggerNextWordPrediction];
+    }
 }
 
 - (void)commitCompositionWithoutSpace:(id)sender {
@@ -565,8 +574,19 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 
     [self reset];
 
-    // Trigger next-word prediction after commit
-    [self triggerNextWordPrediction];
+    // Only trigger prediction if committed text contains letters
+    if ([self _containsLetter:text]) {
+        [self triggerNextWordPrediction];
+    }
+}
+
+- (BOOL)_containsLetter:(NSString *)text {
+    if (!text) return NO;
+    for (NSUInteger i = 0; i < text.length; i++) {
+        unichar ch = [text characterAtIndex:i];
+        if ([[NSCharacterSet letterCharacterSet] characterIsMember:ch]) return YES;
+    }
+    return NO;
 }
 
 - (void)reset {
@@ -704,10 +724,12 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
         _annotationWin = [AnnotationWinController sharedController];
     }
 
+    // Cancel any pending predictions and dismiss popup
+    [[NextWordPredictor shared] cancelPendingPrediction];
+    [self exitPredictionMode];
+
     _currentCandidateIndex = 1;
     _candidates = [[NSMutableArray alloc] init];
-    _predictionMode = NO;
-    _predictions = nil;
 }
 
 - (void)deactivateServer:(id)sender {
