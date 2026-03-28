@@ -727,7 +727,7 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 }
 
 - (void)clickAbout:(NSMenuItem *)sender {
-    [self openUrl:@"https://github.com/dongyuwei/hallelujahIM"];
+    [self openUrl:@"https://github.com/OMEG-Lu/typeflow"];
 }
 
 - (void)openUrl:(NSString *)url {
