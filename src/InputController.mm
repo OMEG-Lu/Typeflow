@@ -1,13 +1,18 @@
 #import <AppKit/NSSpellChecker.h>
+#import <Carbon/Carbon.h>
 #import <CoreServices/CoreServices.h>
 
 #import "InputApplicationDelegate.h"
 #import "InputController.h"
 #import "NSScreen+PointConversion.h"
+#import "PreferencesWindowController.h"
 
 extern IMKCandidates *sharedCandidates;
 extern NSUserDefaults *preference;
 extern ConversionEngine *engine;
+
+static const NSInteger kMaxContextHistoryWords = 50;
+static const NSInteger kPredictionCount = 9;
 
 typedef NSInteger KeyCode;
 static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC = 53, KEY_ARROW_DOWN = 125, KEY_ARROW_UP = 126, KEY_RIGHT_SHIFT = 60;
@@ -16,6 +21,8 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 
 - (void)showIMEPreferences:(id)sender;
 - (void)clickAbout:(NSMenuItem *)sender;
+- (BOOL)isPrivacySensitiveClient:(id)client;
+- (void)cancelPredictionForPrivacy;
 
 @end
 
@@ -46,10 +53,21 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
                     [self cancelComposition];
                     [self commitComposition:sender];
                 }
+                // Also exit prediction mode when switching to English mode
+                [self exitPredictionMode];
             }
         }
         break;
     case NSEventTypeKeyDown:
+        if ([self isPrivacySensitiveClient:sender]) {
+            [self cancelPredictionForPrivacy];
+        }
+        // Handle ALL prediction mode keys before the English mode check,
+        // because _defaultEnglishMode breaks out of the switch and skips onKeyEvent:.
+        if (_predictionMode) {
+            return [self handlePredictionModeKey:event client:sender];
+        }
+
         if (_defaultEnglishMode) {
             break;
         }
@@ -86,6 +104,11 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 
     NSString *bufferedText = [self originalBuffer];
     bool hasBufferedText = bufferedText && bufferedText.length > 0;
+
+    // --- Prediction mode key handling ---
+    if (_predictionMode) {
+        return [self handlePredictionModeKey:event client:sender];
+    }
 
     if (keyCode == KEY_DELETE) {
         if (hasBufferedText) {
@@ -180,6 +203,293 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
     return NO;
 }
 
+#pragma mark - Prediction Mode Key Handling
+
+- (BOOL)handlePredictionModeKey:(NSEvent *)event client:(id)sender {
+    NSInteger keyCode = event.keyCode;
+    NSString *characters = event.characters;
+    char ch = characters.length > 0 ? [characters characterAtIndex:0] : 0;
+
+    // ESC: dismiss predictions
+    if (keyCode == KEY_ESC) {
+        [self exitPredictionMode];
+        return YES;
+    }
+
+    // Space: select first prediction (if available)
+    if (keyCode == KEY_SPACE) {
+        if (_predictions && _predictions.count > 0) {
+            [self selectPrediction:_predictions[0] client:sender];
+            return YES;
+        }
+        [self exitPredictionMode];
+        return NO;
+    }
+
+    // Return: set flag so candidateSelected: knows to dismiss instead of select.
+    // IMKCandidates intercepts Return before we get here, so we also handle it
+    // via candidateSelected:.
+    if (keyCode == KEY_RETURN) {
+        [self exitPredictionMode];
+        return YES;
+    }
+
+    // Arrow keys: navigate prediction candidates
+    if (keyCode == KEY_ARROW_DOWN) {
+        [sharedCandidates moveDown:self];
+        _currentCandidateIndex++;
+        return YES;
+    }
+    if (keyCode == KEY_ARROW_UP) {
+        [sharedCandidates moveUp:self];
+        _currentCandidateIndex--;
+        return YES;
+    }
+
+    // Digit keys 1-9: select prediction by index
+    if ([[NSCharacterSet decimalDigitCharacterSet] characterIsMember:ch]) {
+        int pressedNumber = characters.intValue;
+        if (pressedNumber >= 1 && pressedNumber <= (int)_predictions.count) {
+            [self selectPrediction:_predictions[pressedNumber - 1] client:sender];
+            return YES;
+        }
+        // 0 or out of range: exit prediction, type the digit
+        [self exitPredictionMode];
+        return NO;
+    }
+
+    // Delete key: exit prediction mode
+    if (keyCode == KEY_DELETE) {
+        [self exitPredictionMode];
+        return NO;
+    }
+
+    // Letter keys: exit prediction mode, start normal typing
+    if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+        [self exitPredictionMode];
+        // Re-enter normal typing flow
+        [self originalBufferAppend:characters client:sender];
+        [sharedCandidates updateCandidates];
+        [sharedCandidates show:kIMKLocateCandidatesBelowHint];
+        return YES;
+    }
+
+    // Punctuation: exit prediction mode, let it pass through
+    if ([[NSCharacterSet punctuationCharacterSet] characterIsMember:ch] || [[NSCharacterSet symbolCharacterSet] characterIsMember:ch]) {
+        [self exitPredictionMode];
+        return NO;
+    }
+
+    return NO;
+}
+
+- (void)selectPrediction:(NSString *)word client:(id)sender {
+    BOOL commitWordWithSpace = [preference boolForKey:@"commitWordWithSpace"];
+    NSString *text = word;
+    if (commitWordWithSpace) {
+        text = [NSString stringWithFormat:@"%@ ", word];
+    }
+
+    [sender insertText:text replacementRange:NSMakeRange(NSNotFound, NSNotFound)];
+
+    if (![self isPrivacySensitiveClient:sender]) {
+        [self addToContextHistory:word];
+    }
+    [self exitPredictionMode];
+
+    // Chain: trigger next prediction
+    [self triggerNextWordPrediction];
+}
+
+#pragma mark - Prediction Mode Management
+
+- (void)exitPredictionMode {
+    if (!_predictionMode) return;
+
+    _predictionMode = NO;
+    _predictions = nil;
+    _currentCandidateIndex = 1;
+
+    [[NextWordPredictor shared] cancelPendingPrediction];
+
+    [sharedCandidates clearSelection];
+    [sharedCandidates hide];
+    [sharedCandidates setCandidateData:@[]];
+
+    [_annotationWin setAnnotation:@""];
+    [_annotationWin hideWindow];
+}
+
+- (void)enterPredictionModeWithPredictions:(NSArray<NSString *> *)predictions {
+    if (!predictions || predictions.count == 0) return;
+
+    // Don't enter prediction mode if user has already started typing
+    if ([self originalBuffer].length > 0) return;
+
+    _predictionMode = YES;
+    _predictions = [NSMutableArray arrayWithArray:predictions];
+    _currentCandidateIndex = 1;
+
+    [sharedCandidates updateCandidates];
+    [sharedCandidates show:kIMKLocateCandidatesBelowHint];
+}
+
+#pragma mark - Context History
+
+- (NSMutableArray<NSString *> *)contextHistory {
+    if (!_contextHistory) {
+        _contextHistory = [NSMutableArray array];
+    }
+    return _contextHistory;
+}
+
+- (BOOL)isPrivacySensitiveClient:(id)client {
+    #pragma unused(client)
+    return IsSecureEventInputEnabled();
+}
+
+- (void)cancelPredictionForPrivacy {
+    [self exitPredictionMode];
+    [[NextWordPredictor shared] cancelPendingPrediction];
+}
+
+- (void)addToContextHistory:(NSString *)word {
+    if (!word || word.length == 0) return;
+    if ([self isPrivacySensitiveClient:_currentClient]) return;
+
+    // Clean the word (remove trailing spaces, etc.)
+    NSString *cleanWord = [word stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (cleanWord.length == 0) return;
+
+    [[self contextHistory] addObject:cleanWord];
+
+    // Keep context history bounded
+    while ([self contextHistory].count > kMaxContextHistoryWords) {
+        [[self contextHistory] removeObjectAtIndex:0];
+    }
+}
+
+- (NSString *)contextString {
+    return [[self contextHistory] componentsJoinedByString:@" "];
+}
+
+#pragma mark - Surrounding Text Context
+
+- (NSString *)surroundingTextContext:(id)client {
+    if (!client) return nil;
+    if ([self isPrivacySensitiveClient:client]) return nil;
+
+    // Use IMKTextInput protocol to read text before the cursor
+    @try {
+        NSRange selRange = [client selectedRange];
+        if (selRange.location == NSNotFound || selRange.location == 0) return nil;
+
+        // Read up to 500 characters before cursor
+        NSUInteger len = MIN(selRange.location, (NSUInteger)500);
+        NSRange readRange = NSMakeRange(selRange.location - len, len);
+        NSAttributedString *attrStr = [client attributedSubstringFromRange:readRange];
+        if (!attrStr || attrStr.length == 0) return nil;
+
+        NSString *raw = attrStr.string;
+
+        // Find the last CJK character and only use text after it.
+        // This filters out Chinese/Japanese/Korean text that confuses the LLM.
+        NSInteger cutoff = -1;
+        for (NSInteger i = (NSInteger)raw.length - 1; i >= 0; i--) {
+            unichar ch = [raw characterAtIndex:i];
+            BOOL isCJK = (ch >= 0x4E00 && ch <= 0x9FFF) ||  // CJK Unified
+                          (ch >= 0x3400 && ch <= 0x4DBF) ||  // CJK Extension A
+                          (ch >= 0x3000 && ch <= 0x303F) ||  // CJK Symbols
+                          (ch >= 0xFF00 && ch <= 0xFFEF) ||  // Fullwidth forms
+                          (ch >= 0x3040 && ch <= 0x30FF);    // Hiragana/Katakana
+            if (isCJK) {
+                cutoff = i;
+                break;
+            }
+        }
+
+        NSString *context;
+        if (cutoff >= 0 && cutoff < (NSInteger)raw.length - 1) {
+            context = [[raw substringFromIndex:cutoff + 1] stringByTrimmingCharactersInSet:
+                        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        } else if (cutoff < 0) {
+            context = raw;
+        } else {
+            return nil; // CJK is the very last char
+        }
+
+        if (context.length == 0) return nil;
+
+        // Trim to last 500 chars for reasonable context size
+        if (context.length > 500) {
+            context = [context substringFromIndex:context.length - 500];
+            NSRange spaceRange = [context rangeOfString:@" "];
+            if (spaceRange.location != NSNotFound && spaceRange.location < 50) {
+                context = [context substringFromIndex:spaceRange.location + 1];
+            }
+        }
+
+        return context;
+    } @catch (NSException *e) {
+        // Some apps don't support attributedSubstringFromRange
+    }
+    return nil;
+}
+
+#pragma mark - Next Word Prediction Trigger
+
+- (void)triggerNextWordPrediction {
+    [self triggerNextWordPredictionWithClient:_currentClient];
+}
+
+- (void)triggerNextWordPredictionWithClient:(id)client {
+    BOOL enabled = [preference boolForKey:@"enableNextWordPrediction"];
+    if (!enabled) return;
+    if ([self isPrivacySensitiveClient:client]) {
+        [self cancelPredictionForPrivacy];
+        return;
+    }
+
+    if (![NextWordPredictor shared].isModelLoaded) return;
+
+    // Small delay so the just-committed text is available in the app for surroundingTextContext
+    __weak InputController *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(50 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+        InputController *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        if (strongSelf->_predictionMode) return;
+        if ([strongSelf originalBuffer].length > 0) return;
+        if ([strongSelf isPrivacySensitiveClient:client]) {
+            [strongSelf cancelPredictionForPrivacy];
+            return;
+        }
+
+        // Build context: prefer surrounding text from the app, fall back to our history
+        NSString *context = [strongSelf surroundingTextContext:client];
+
+        if (!context || context.length == 0) {
+            context = [strongSelf contextString];
+        }
+        if (!context || context.length == 0) {
+            return;
+        }
+
+        [[NextWordPredictor shared] predictNextWords:context
+                                               count:kPredictionCount
+                                          completion:^(NSArray<NSString *> *predictions) {
+                                              InputController *ss = weakSelf;
+                                              if (!ss) return;
+
+                                              // Only show predictions if user hasn't started typing
+                                              if ([ss originalBuffer].length == 0 && !ss->_predictionMode) {
+                                                  [ss enterPredictionModeWithPredictions:predictions];
+                                              }
+                                          }];
+    });
+}
+
+#pragma mark - Existing Methods (Modified)
+
 - (BOOL)isMojaveAndLaterSystem {
     NSOperatingSystemVersion version = [NSProcessInfo processInfo].operatingSystemVersion;
     return (version.majorVersion == 10 && version.minorVersion > 13) || version.majorVersion > 10;
@@ -215,6 +525,12 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
     if (text == nil || text.length == 0) {
         text = [self originalBuffer];
     }
+
+    // Save committed word to context history BEFORE reset
+    if (![self isPrivacySensitiveClient:sender]) {
+        [self addToContextHistory:text];
+    }
+
     BOOL commitWordWithSpace = [preference boolForKey:@"commitWordWithSpace"];
 
     if (commitWordWithSpace && text.length > 0) {
@@ -228,6 +544,9 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
     [sender insertText:text replacementRange:NSMakeRange(NSNotFound, NSNotFound)];
 
     [self reset];
+
+    // Trigger next-word prediction after commit
+    [self triggerNextWordPrediction];
 }
 
 - (void)commitCompositionWithoutSpace:(id)sender {
@@ -237,9 +556,17 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
         text = [self originalBuffer];
     }
 
+    // Save committed word to context history BEFORE reset
+    if (![self isPrivacySensitiveClient:sender]) {
+        [self addToContextHistory:text];
+    }
+
     [sender insertText:text replacementRange:NSMakeRange(NSNotFound, NSNotFound)];
 
     [self reset];
+
+    // Trigger next-word prediction after commit
+    [self triggerNextWordPrediction];
 }
 
 - (void)reset {
@@ -253,6 +580,8 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
     [sharedCandidates setCandidateData:@[]];
     [_annotationWin setAnnotation:@""];
     [_annotationWin hideWindow];
+    // Note: we do NOT reset _predictionMode or _contextHistory here.
+    // Prediction mode is managed separately.
 }
 
 - (NSMutableString *)composedBuffer {
@@ -310,13 +639,37 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 }
 
 - (NSArray *)candidates:(id)sender {
+    // In prediction mode, return predictions as candidates
+    if (_predictionMode && _predictions && _predictions.count > 0) {
+        _candidates = [NSMutableArray arrayWithArray:_predictions];
+        return _predictions;
+    }
+
+    // Normal mode: context-aware candidate generation
     NSString *originalInput = [self originalBuffer];
-    NSArray *candidateList = [engine getCandidates:originalInput];
+
+    NSString *context = nil;
+    if (![self isPrivacySensitiveClient:_currentClient]) {
+        context = [self surroundingTextContext:_currentClient];
+        if (!context || context.length == 0) {
+            context = [self contextString];
+        }
+    }
+    NSArray *candidateList = [engine getCandidates:originalInput withContext:context];
     _candidates = [NSMutableArray arrayWithArray:candidateList];
     return candidateList;
 }
 
 - (void)candidateSelectionChanged:(NSAttributedString *)candidateString {
+    if (_predictionMode) {
+        // In prediction mode, show annotation for the selected prediction
+        BOOL showTranslation = [preference boolForKey:@"showTranslation"];
+        if (showTranslation) {
+            [self showAnnotation:candidateString];
+        }
+        return;
+    }
+
     [self _updateComposedBuffer:candidateString];
 
     [self showPreeditString:candidateString.string];
@@ -330,6 +683,11 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 }
 
 - (void)candidateSelected:(NSAttributedString *)candidateString {
+    if (_predictionMode) {
+        [self selectPrediction:candidateString.string client:_currentClient];
+        return;
+    }
+
     [self _updateComposedBuffer:candidateString];
 
     [self commitComposition:_currentClient];
@@ -348,9 +706,12 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 
     _currentCandidateIndex = 1;
     _candidates = [[NSMutableArray alloc] init];
+    _predictionMode = NO;
+    _predictions = nil;
 }
 
 - (void)deactivateServer:(id)sender {
+    [self exitPredictionMode];
     [self reset];
 }
 
@@ -362,7 +723,7 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 }
 
 - (void)showIMEPreferences:(id)sender {
-    [self openUrl:@"http://localhost:62718/index.html"];
+    [[PreferencesWindowController shared] showWindow];
 }
 
 - (void)clickAbout:(NSMenuItem *)sender {
@@ -371,11 +732,11 @@ static const KeyCode KEY_RETURN = 36, KEY_SPACE = 49, KEY_DELETE = 51, KEY_ESC =
 
 - (void)openUrl:(NSString *)url {
     NSWorkspace *ws = [NSWorkspace sharedWorkspace];
-    
+
     NSWorkspaceOpenConfiguration *configuration = [NSWorkspaceOpenConfiguration new];
     configuration.promptsUserIfNeeded = YES;
     configuration.createsNewApplicationInstance = NO;
-    
+
     [ws openURL:[NSURL URLWithString:url] configuration:configuration completionHandler:^(NSRunningApplication * _Nullable app, NSError * _Nullable error) {
         if (error) {
           NSLog(@"Failed to run the app: %@", error.localizedDescription);

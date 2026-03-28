@@ -33,3 +33,81 @@ label select {
 p {
     margin: 0;
 }
+
+hr {
+    border: none;
+    border-top: 1px solid #ccc;
+    margin: 20px 0;
+}
+
+h3 {
+    margin: 0 0 15px 0;
+    font-size: 14px;
+    color: #333;
+}
+
+.prediction-settings {
+    margin-top: 10px;
+}
+
+.prediction-settings select {
+    display: block;
+    margin-top: 5px;
+    width: 100%;
+    padding: 5px;
+}
+
+.model-status {
+    margin-top: 15px;
+    padding: 10px;
+    background: hsla(31,15%,50%,.05);
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.model-status p {
+    margin-bottom: 5px;
+}
+
+.download-progress {
+    width: 100%;
+    margin: 10px 0 8px 0;
+}
+
+.download-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.download-button {
+    padding: 8px 10px;
+    border: 1px solid #b8aa99;
+    border-radius: 6px;
+    background: #f6f0e7;
+    cursor: pointer;
+}
+
+.download-button:disabled {
+    cursor: default;
+    opacity: 0.65;
+}
+
+.status-ok {
+    color: #2d8a4e;
+    font-weight: bold;
+}
+
+.status-warn {
+    color: #b5740d;
+    font-weight: bold;
+}
+
+.model-path code,
+.model-hint code {
+    background: #e8e8e8;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+}

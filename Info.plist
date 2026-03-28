@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>hallelujah</string>
+	<string>Typeflow</string>
 	<key>CFBundleIconFile</key>
 	<string>him.icns</string>
 	<key>CFBundleIdentifier</key>
@@ -23,7 +23,7 @@
 	<key>CFBundleVersion</key>
 	<string>1.0</string>
 	<key>InputMethodConnectionName</key>
-	<string>Hallelujah_1_Connection</string>
+	<string>Typeflow_1_Connection</string>
 	<key>InputMethodServerControllerClass</key>
 	<string>InputController</string>
 	<key>LSApplicationCategoryType</key>

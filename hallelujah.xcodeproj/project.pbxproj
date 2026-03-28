@@ -36,6 +36,8 @@
 		F102C5AC1F4882D30005B03F /* InputController.mm in Sources */ = {isa = PBXBuildFile; fileRef = F102C5AB1F4882D30005B03F /* InputController.mm */; };
 		F109B4911E1A83AF00AA7A41 /* AnnotationWinController.m in Sources */ = {isa = PBXBuildFile; fileRef = F109B48F1E1A83AF00AA7A41 /* AnnotationWinController.m */; };
 		F1BF613D22D4DF6F003B946F /* AnnotationWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = F1BF613B22D4DF6F003B946F /* AnnotationWindow.xib */; };
+		AA00000100000000000000A3 /* NextWordPredictor.mm in Sources */ = {isa = PBXBuildFile; fileRef = AA00000100000000000000A2 /* NextWordPredictor.mm */; };
+		AA00000100000000000000A5 /* TestNextWordPredictor.mm in Sources */ = {isa = PBXBuildFile; fileRef = AA00000100000000000000A4 /* TestNextWordPredictor.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,6 +95,9 @@
 		F109B4901E1A83AF00AA7A41 /* AnnotationWinController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AnnotationWinController.h; path = src/AnnotationWinController.h; sourceTree = "<group>"; };
 		F1BF613C22D4DF6F003B946F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/AnnotationWindow.xib; sourceTree = "<group>"; };
 		F1CDA2A41B55180A005086C6 /* InputController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = InputController.h; path = src/InputController.h; sourceTree = "<group>"; };
+		AA00000100000000000000A1 /* NextWordPredictor.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = NextWordPredictor.h; path = src/NextWordPredictor.h; sourceTree = "<group>"; };
+		AA00000100000000000000A2 /* NextWordPredictor.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = NextWordPredictor.mm; path = src/NextWordPredictor.mm; sourceTree = "<group>"; };
+		AA00000100000000000000A4 /* TestNextWordPredictor.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = TestNextWordPredictor.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +132,8 @@
 			children = (
 				386E1BFC22DC5A54000C6DCF /* ConversionEngine.h */,
 				386E1BFF22DC5E9B000C6DCF /* ConversionEngine.mm */,
+				AA00000100000000000000A1 /* NextWordPredictor.h */,
+				AA00000100000000000000A2 /* NextWordPredictor.mm */,
 				381CD8C422C60D610098764F /* WebServer.h */,
 				381CD8C522C60D610098764F /* WebServer.m */,
 				389468D41F57C8CE00EF1F5E /* InputApplicationDelegate.h */,
@@ -220,6 +227,7 @@
 			isa = PBXGroup;
 			children = (
 				3833665822DD6F45004BA2D1 /* TestConversionEngine.mm */,
+				AA00000100000000000000A4 /* TestNextWordPredictor.mm */,
 				3802CD7D22CE034100A7E2F9 /* Info.plist */,
 			);
 			path = Tests;
@@ -438,6 +446,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				3833665922DD6F45004BA2D1 /* TestConversionEngine.mm in Sources */,
+				AA00000100000000000000A5 /* TestNextWordPredictor.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -452,6 +461,7 @@
 				F109B4911E1A83AF00AA7A41 /* AnnotationWinController.m in Sources */,
 				381CD8C622C60D610098764F /* WebServer.m in Sources */,
 				386E1C0022DC5E9C000C6DCF /* ConversionEngine.mm in Sources */,
+				AA00000100000000000000A3 /* NextWordPredictor.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

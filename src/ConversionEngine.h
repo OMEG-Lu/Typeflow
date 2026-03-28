@@ -15,6 +15,7 @@
 - (NSArray *)sortByDamerauLevenshteinDistance:(NSArray *)original inputText:(NSString *)text;
 - (NSArray *)getSuggestionOfSpellChecker:(NSString *)buffer;
 - (NSArray *)getCandidates:(NSString *)originalInput;
+- (NSArray *)getCandidates:(NSString *)originalInput withContext:(NSString *)context;
 
 @property NSDictionary *wordsWithFrequencyAndTranslation;
 @property NSDictionary *substitutions;

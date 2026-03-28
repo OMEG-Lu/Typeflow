@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Hallelujah input method preference</title>
+    <title>Typeflow input method preference</title>
     <link rel="stylesheet" href="./index.css" />
   </head>
   <body>
@@ -36,6 +36,74 @@
             v-model="preference.commitWordWithSpace"
           />
         </label>
+
+        <hr />
+
+        <h3>Next Word Prediction (LLM)</h3>
+
+        <label>
+          Enable next-word prediction:
+          <input
+            type="checkbox"
+            v-model="preference.enableNextWordPrediction"
+          />
+        </label>
+
+        <div v-if="preference.enableNextWordPrediction" class="prediction-settings">
+          <label>
+            Model size:
+            <select v-model.number="preference.modelTier">
+              <option :value="0" :disabled="!modelStatus.smallModelAvailable">
+                Small (~135M) - Fastest {{ !modelStatus.smallModelAvailable ? '(not downloaded)' : '' }}
+              </option>
+              <option :value="1" :disabled="!modelStatus.mediumModelAvailable">
+                Medium (~0.5B) - Balanced {{ !modelStatus.mediumModelAvailable ? '(not downloaded)' : '' }}
+              </option>
+              <option :value="2" :disabled="!modelStatus.largeModelAvailable">
+                Large (~1.5B) - Accurate {{ !modelStatus.largeModelAvailable ? '(not downloaded)' : '' }}
+              </option>
+              <option :value="3" :disabled="!modelStatus.xlargeModelAvailable">
+                XLarge (Qwen2.5 3B) - Best Quality {{ !modelStatus.xlargeModelAvailable ? '(not downloaded)' : '' }}
+              </option>
+            </select>
+          </label>
+
+          <div class="model-status">
+            <p v-if="modelStatus.isModelLoaded" class="status-ok">
+              Model loaded ({{ tierName(modelStatus.currentTier) }})
+            </p>
+            <p v-else-if="modelStatus.isDownloading" class="status-ok">
+              {{ modelStatus.downloadStatus || 'Downloading model...' }}
+            </p>
+            <p v-else class="status-warn">
+              Model not loaded. Please download a model first.
+            </p>
+            <progress
+              v-if="modelStatus.isDownloading"
+              class="download-progress"
+              max="100"
+              :value="Math.round((modelStatus.downloadProgress || 0) * 100)"
+            ></progress>
+            <div class="download-grid">
+              <button
+                type="button"
+                class="download-button"
+                v-for="tier in [0, 1, 2, 3]"
+                :key="tier"
+                :disabled="downloadRequestInFlight || modelStatus.isDownloading || isTierAvailable(tier)"
+                @click="downloadModel(tier)"
+              >
+                {{ downloadButtonLabel(tier) }}
+              </button>
+            </div>
+            <p class="model-path">
+              Model directory: <code>{{ modelStatus.modelDirectory }}</code>
+            </p>
+            <p class="model-hint">
+              Downloading here installs the model directly for your current macOS user.
+            </p>
+          </div>
+        </div>
 
         <div class="form-footer">
           <button :disabled="loading">

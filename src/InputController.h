@@ -3,6 +3,7 @@
 
 #import "AnnotationWinController.h"
 #import "ConversionEngine.h"
+#import "NextWordPredictor.h"
 
 @interface InputController : IMKInputController {
     NSMutableString *_composedBuffer;
@@ -15,6 +16,11 @@
     NSUInteger _lastModifiers[2];
     NSEventType _lastEventTypes[2];
     AnnotationWinController *_annotationWin;
+
+    // Next-word prediction state
+    BOOL _predictionMode;
+    NSMutableArray<NSString *> *_predictions;
+    NSMutableArray<NSString *> *_contextHistory;
 }
 
 - (NSMutableString *)composedBuffer;

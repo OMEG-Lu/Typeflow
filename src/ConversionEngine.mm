@@ -1,9 +1,10 @@
 #import "ConversionEngine.h"
+#import "NextWordPredictor.h"
 
 NSDictionary *deserializeJSON(NSString *path) {
     NSInputStream *inputStream = [[NSInputStream alloc] initWithFileAtPath:path];
     [inputStream open];
-    NSDictionary *dict = [NSJSONSerialization JSONObjectWithStream:inputStream options:nil error:nil];
+    NSDictionary *dict = [NSJSONSerialization JSONObjectWithStream:inputStream options:0 error:nil];
 
     [inputStream close];
     return dict;
@@ -179,6 +180,26 @@ marisa::Trie trie;
     return [array subarrayWithRange:NSMakeRange(0, limit)];
 }
 
+// Common English contractions for candidate injection
+static NSArray<NSString *> *_commonContractions;
+
++ (NSArray<NSString *> *)commonContractions {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        _commonContractions = @[
+            @"don't", @"doesn't", @"didn't", @"isn't", @"aren't", @"wasn't", @"weren't",
+            @"won't", @"wouldn't", @"couldn't", @"shouldn't", @"can't", @"haven't", @"hasn't",
+            @"hadn't", @"mustn't", @"needn't", @"that's", @"there's", @"here's", @"what's",
+            @"who's", @"where's", @"when's", @"how's", @"it's", @"he's", @"she's", @"let's",
+            @"i'm", @"i've", @"i'd", @"i'll", @"you're", @"you've", @"you'd", @"you'll",
+            @"we're", @"we've", @"we'd", @"we'll", @"they're", @"they've", @"they'd", @"they'll",
+            @"he'd", @"he'll", @"she'd", @"she'll", @"it'd", @"it'll",
+            @"ain't", @"o'clock", @"ma'am", @"'cause", @"'til"
+        ];
+    });
+    return _commonContractions;
+}
+
 - (NSArray *)getCandidates:(NSString *)originalInput {
     NSString *buffer = originalInput.lowercaseString;
     NSMutableArray *result = [[NSMutableArray alloc] init];
@@ -192,8 +213,33 @@ marisa::Trie trie;
         if (filtered && filtered.count > 0) {
             NSArray *sorted = [self sortWordsByFrequency:filtered];
             [result addObjectsFromArray:sorted];
-        } else {
-            [result addObjectsFromArray:[self getSuggestionOfSpellChecker:buffer]];
+        }
+
+        // Always run spell checker to catch typos (e.g., "adn" → "and").
+        // Insert corrections near the top so they're visible even when
+        // the trie found matches (which may be obscure words like "adnexal").
+        if (buffer.length >= 2) {
+            NSArray *spellSuggestions = [self getSuggestionOfSpellChecker:buffer];
+            if (spellSuggestions && spellSuggestions.count > 0) {
+                // Insert after raw input (position 0) but before trie results
+                NSUInteger insertIdx = (filtered && filtered.count > 0) ? 0 : 0;
+                for (NSString *suggestion in spellSuggestions) {
+                    if (![result containsObject:suggestion] && ![suggestion isEqualToString:buffer]) {
+                        [result insertObject:suggestion atIndex:insertIdx];
+                        insertIdx++;
+                        if (insertIdx >= 3) break; // At most 3 spell corrections
+                    }
+                }
+            }
+        }
+
+        // Inject matching contractions (e.g., "hav" → "haven't")
+        for (NSString *contraction in [ConversionEngine commonContractions]) {
+            if ([contraction hasPrefix:buffer] && ![result containsObject:contraction]) {
+                // Insert after the first few dictionary matches for visibility
+                NSUInteger insertIdx = MIN(3, result.count);
+                [result insertObject:contraction atIndex:insertIdx];
+            }
         }
 
         if (self.pinyinDict && self.pinyinDict[buffer]) {
@@ -219,6 +265,61 @@ marisa::Trie trie;
     NSOrderedSet *orderedSet = [NSOrderedSet orderedSetWithArray:result2];
     NSArray *arrayWithoutDuplicates = orderedSet.array;
     return [NSArray arrayWithArray:arrayWithoutDuplicates];
+}
+
+- (NSArray *)getCandidates:(NSString *)originalInput withContext:(NSString *)context {
+    NSArray *baseCandidates = [self getCandidates:originalInput];
+
+    if (!context || context.length == 0 || !originalInput || originalInput.length == 0) {
+        return baseCandidates;
+    }
+
+    // Get contextual scores from the LLM (uses cached logits, no new inference)
+    NSDictionary<NSString *, NSNumber *> *contextScores =
+        [[NextWordPredictor shared] contextualScoresForPrefix:originalInput.lowercaseString
+                                                     context:context];
+
+    if (!contextScores || contextScores.count == 0) {
+        NSLog(@"[ConversionEngine] No contextual scores available; using frequency order");
+        return baseCandidates;
+    }
+    NSLog(@"[ConversionEngine] Reranking candidates with %lu contextual scores", (unsigned long)contextScores.count);
+
+    // Keep raw input as first candidate (position 0), rerank the rest
+    NSMutableArray *boosted = [NSMutableArray array];
+    NSMutableArray *rest = [NSMutableArray array];
+
+    BOOL firstIsRawInput = baseCandidates.count > 0 &&
+        [baseCandidates[0] isEqualToString:originalInput];
+    NSInteger startIdx = firstIsRawInput ? 1 : 0;
+
+    for (NSInteger i = startIdx; i < (NSInteger)baseCandidates.count; i++) {
+        NSString *candidate = baseCandidates[i];
+        NSString *lowerCandidate = candidate.lowercaseString;
+        NSNumber *score = contextScores[lowerCandidate];
+        if (score) {
+            [boosted addObject:@{@"word": candidate, @"score": score}];
+        } else {
+            [rest addObject:candidate];
+        }
+    }
+
+    // Sort boosted candidates by LLM score (descending)
+    [boosted sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"score"] compare:a[@"score"]];
+    }];
+
+    // Reassemble: raw input first, then boosted, then rest
+    NSMutableArray *reranked = [NSMutableArray array];
+    if (firstIsRawInput) {
+        [reranked addObject:baseCandidates[0]];
+    }
+    for (NSDictionary *item in boosted) {
+        [reranked addObject:item[@"word"]];
+    }
+    [reranked addObjectsFromArray:rest];
+
+    return [reranked copy];
 }
 
 @end
