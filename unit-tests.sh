@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-xcodebuild test \
+xcodebuild build-for-testing \
   CODE_SIGN_IDENTITY="" \
   CODE_SIGNING_REQUIRED=NO \
   -workspace hallelujah.xcworkspace/ \
