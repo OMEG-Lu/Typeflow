@@ -1,6 +1,6 @@
 ![Platform:macOS](https://img.shields.io/badge/platform-macOS-blue)
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](http://www.gnu.org/licenses/gpl-3.0)
-[![GitHub downloads](https://img.shields.io/github/downloads/OMEG-Lu/typeflow/total?label=Downloads&labelColor=27303D&color=0D1117&logo=github&logoColor=FFFFFF&style=flat)](https://github.com/OMEG-Lu/typeflow/releases)
+[![GitHub downloads](https://img.shields.io/github/downloads/OMEG-Lu/Typeflow/total?label=Downloads&labelColor=27303D&color=0D1117&logo=github&logoColor=FFFFFF&style=flat)](https://github.com/OMEG-Lu/Typeflow/releases)
 
 # Typeflow
 
@@ -24,7 +24,7 @@ Typeflow 是一款面向 macOS 的英文输入法。它基于音近、形近和�
 
 ## 下载与安装
 
-1. 从 [Releases](https://github.com/OMEG-Lu/typeflow/releases) 下载最新的 [Typeflow-Installer.pkg](https://github.com/OMEG-Lu/typeflow/releases/latest)。
+1. 从 [Releases](https://github.com/OMEG-Lu/Typeflow/releases) 下载最新的 [Typeflow-Installer.pkg](https://github.com/OMEG-Lu/Typeflow/releases/latest)。
 2. 双击安装包完成安装。
 3. 如果系统没有自动切换成功，可以在 macOS 的 `Keyboard` -> `Input Sources` 中手动添加 `Typeflow`。
 4. 首次使用 next-word prediction 时，打开 Typeflow 偏好设置，选择模型大小并点击下载。
